@@ -493,7 +493,12 @@ async function connect2S5(relayConf, targetHost, targetPort, initialData) {
     let readBuffer = new Uint8Array(0);
     async function readExact(length) {
         while (readBuffer.length < length) {
-            const { done, value } = await reader.read();
+            let packet;
+            let timer;
+            try {
+                packet = await Promise.race([reader.read(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('S5 handshake timed out')), 10000); })]);
+            } finally { if (timer) clearTimeout(timer); }
+            const { done, value } = packet;
             if (done) throw new Error('S5 connection closed during handshake');
             const merged = new Uint8Array(readBuffer.length + value.length);
             merged.set(readBuffer); merged.set(value, readBuffer.length); readBuffer = merged;
@@ -554,8 +559,9 @@ async function connect2S5(relayConf, targetHost, targetPort, initialData) {
         reader.releaseLock();
         return socket;
     } catch (error) {
-        writer.releaseLock();
-        reader.releaseLock();
+        try { writer.releaseLock(); } catch (e) {}
+        try { reader.releaseLock(); } catch (e) {}
+        try { socket.close(); } catch (e) {}
         throw error;
     }
 }
@@ -1759,7 +1765,7 @@ const ADMIN_SESSION_TTL=8*60*60;
 function adminB64Url(bytes){let raw='';for(const b of bytes)raw+=String.fromCharCode(b);return btoa(raw).replace(/=/g,'').replace(/\\+/g,'-').replace(/\\//g,'_');}
 async function adminSignature(payload,password){const key=await CRYPTO.subtle.importKey('raw',new TextEncoder().encode(password),{name:'HMAC',hash:'SHA-256'},false,['sign']);return adminB64Url(new Uint8Array(await CRYPTO.subtle.sign('HMAC',key,new TextEncoder().encode(payload))));}
 async function handleAdminLogin(request,password){if(!password)return new Response('Configure PASSWORD first.',{status:503});const form=await request.formData();if(String(form.get('password')||'')!==password)return new Response('Invalid password',{status:401,headers:{'Cache-Control':'no-store'}});const exp=String(Math.floor(Date.now()/1000)+ADMIN_SESSION_TTL),sig=await adminSignature(exp,password);return new Response(null,{status:303,headers:{'Location':'/','Set-Cookie':`cf_admin=${exp}.${sig}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${ADMIN_SESSION_TTL}`,'Cache-Control':'no-store'}});}
-async function isAdminSessionValid(request,password){const m=(request.headers.get('Cookie')||'').match(/(?:^|;\\s*)cf_admin=(\\d+)\\.([A-Za-z0-9_-]+)/);if(!m)return false;const now=Math.floor(Date.now()/1000),exp=Number(m[1]);if(!Number.isSafeInteger(exp)||exp<=now||exp>now+ADMIN_SESSION_TTL+60)return false;try{const want=await adminSignature(m[1],password);if(want.length!==m[2].length)return false;let diff=0;for(let i=0;i<want.length;i++)diff|=want.charCodeAt(i)^m[2].charCodeAt(i);return diff===0;}catch{return false;}}
+async function isAdminSessionValid(request,password){const m=(request.headers.get('Cookie')||'').match(/(?:^|;\s*)cf_admin=(\d+)\.([A-Za-z0-9_-]+)/);if(!m)return false;const now=Math.floor(Date.now()/1000),exp=Number(m[1]);if(!Number.isSafeInteger(exp)||exp<=now||exp>now+ADMIN_SESSION_TTL+60)return false;try{const want=await adminSignature(m[1],password);if(want.length!==m[2].length)return false;let diff=0;for(let i=0;i<want.length;i++)diff|=want.charCodeAt(i)^m[2].charCodeAt(i);return diff===0;}catch{return false;}}
 
 // 获取登录页面(url, baseUrl, showError = false) {
 	const html = `<!DOCTYPE html>
