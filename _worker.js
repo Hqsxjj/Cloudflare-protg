@@ -2136,7 +2136,7 @@ function getMainPageContent(url,baseUrl,authKey,config){
             display: block;
             margin: 0 auto;
             border-radius: 50%;
-            box-shadow: 0 10px 24px rgba(234, 88, 12, .3);
+            box-shadow: 0 10px 24px rgba(201, 170, 112, .18);
         }
         
         .title {
@@ -2362,6 +2362,71 @@ function getMainPageContent(url,baseUrl,authKey,config){
             box-shadow: 0 6px 14px rgba(234, 88, 12, .35);
         }
         
+        /* Premium midnight theme */
+        body {
+            background: radial-gradient(ellipse at 18% 8%, rgba(43, 69, 108, .38), transparent 42%),
+                        radial-gradient(ellipse at 86% 88%, rgba(132, 105, 61, .18), transparent 38%),
+                        #080f1c;
+            color: #e8edf5;
+        }
+        .orb-1 { background: rgba(73, 105, 151, .24); }
+        .orb-2 { background: rgba(190, 157, 101, .16); }
+        .orb-3 { background: rgba(82, 111, 151, .16); }
+        .container {
+            background: rgba(17, 28, 46, .94);
+            border: 1px solid rgba(205, 218, 238, .12);
+            box-shadow: 0 28px 80px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(255, 255, 255, .035);
+        }
+        .logout-btn {
+            background: rgba(17, 28, 46, .72);
+            color: #dce5f1;
+            border-color: rgba(205, 218, 238, .18);
+        }
+        .logout-btn:hover { background: rgba(35, 50, 73, .92); }
+        .logo svg { box-shadow: 0 8px 28px rgba(201, 170, 112, .18); }
+        .title {
+            background: linear-gradient(105deg, #f0dfbd 0%, #c9aa70 48%, #a9bdd8 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+        }
+        .subtitle { color: #93a3b9; }
+        .section-card, .info-card {
+            background: rgba(26, 40, 62, .78);
+            border-color: rgba(184, 201, 225, .12);
+        }
+        .section-title { color: #e7edf6; }
+        .section-title i { color: #c9aa70; }
+        .section-hint { color: #a8b6c9; background: rgba(125, 146, 176, .13); }
+        .link-item:hover {
+            background: rgba(112, 137, 171, .12);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+        }
+        .link-icon { box-shadow: 0 5px 16px rgba(0, 0, 0, .22); }
+        .icon-k1 { background: linear-gradient(145deg, #c9aa70, #8c744c); }
+        .icon-k2 { background: linear-gradient(145deg, #6686ae, #385575); }
+        .icon-k3 { background: linear-gradient(145deg, #8b91b4, #555d80); }
+        .icon-tg { background: linear-gradient(145deg, #6e9db5, #426b83); }
+        .link-label { color: #e8edf5; }
+        .link-value { color: #9cacc1; }
+        .copy-icon { color: #71839d; }
+        .link-item:hover .copy-icon { color: #d6bd91; }
+        .info-item { border-bottom-color: rgba(184, 201, 225, .12); }
+        .label { color: #aebbd0; }
+        .value {
+            color: #dce5f1;
+            background: rgba(117, 139, 169, .14);
+        }
+        .status { background: #73c7a0; }
+        .footer { border-top-color: rgba(184, 201, 225, .12); }
+        .footer-link {
+            color: #aebbd0;
+            background: rgba(117, 139, 169, .12);
+        }
+        .footer-link:hover {
+            background: linear-gradient(105deg, #b99a65, #8f7956);
+            color: #101827;
+            box-shadow: 0 7px 18px rgba(0, 0, 0, .22);
+        }
         .github-icon {
             width: 14px;
             height: 14px;
@@ -2491,7 +2556,7 @@ function getMainPageContent(url,baseUrl,authKey,config){
     </button>
     
     <div class="container">
-        <div class="logo"><svg width="100%" height="100%" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><circle cx="512" cy="512" r="512" style="fill:#f38020"></circle><path d="M608.2 592.4c3.1-10.8 1.9-20.7-3.3-28.1-4.8-6.7-12.9-10.6-22.6-11.1l-184.7-2.4c-1.1 0-2.2-.6-2.8-1.5-.6-.9-.7-2.1-.4-3.3.6-1.8 2.4-3.2 4.3-3.3l186.4-2.4c22.1-1 46.1-18.9 54.5-40.8l10.6-27.8c.5-1.2.6-2.4.3-3.6-12-54.3-60.5-94.8-118.4-94.8-53.4 0-98.7 34.5-114.9 82.4-10.5-7.8-23.9-12-38.3-10.6-25.7 2.5-46.2 23.1-48.8 48.8-.6 6.6-.1 13.1 1.4 19.1-41.9 1.2-75.3 35.4-75.3 77.6 0 3.7.3 7.5.8 11.2.3 1.8 1.8 3.1 3.6 3.1h340.9c1.9 0 3.8-1.4 4.3-3.3l2.4-9.2zM667 473.7c-1.6 0-3.4 0-5.1.2-1.2 0-2.2.9-2.7 2.1l-7.2 25c-3.1 10.8-2 20.7 3.3 28.1 4.8 6.7 12.9 10.6 22.7 11.1l39.3 2.4c1.2 0 2.3.6 2.8 1.5.6.9.7 2.3.5 3.3-.6 1.8-2.4 3.2-4.4 3.3l-41 2.4c-22.2 1-46 18.9-54.5 40.8l-3 7.6c-.6 1.5.5 3 2.1 3h140.8c1.6 0 3.1-1 3.6-2.7 2.4-8.7 3.7-17.9 3.7-27.3 0-55.5-45.3-100.8-101-100.8" style="fill:#fff"></path></svg></div>
+        <div class="logo"><svg width="100%" height="100%" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><circle cx="512" cy="512" r="512" style="fill:#c9aa70"></circle><path d="M608.2 592.4c3.1-10.8 1.9-20.7-3.3-28.1-4.8-6.7-12.9-10.6-22.6-11.1l-184.7-2.4c-1.1 0-2.2-.6-2.8-1.5-.6-.9-.7-2.1-.4-3.3.6-1.8 2.4-3.2 4.3-3.3l186.4-2.4c22.1-1 46.1-18.9 54.5-40.8l10.6-27.8c.5-1.2.6-2.4.3-3.6-12-54.3-60.5-94.8-118.4-94.8-53.4 0-98.7 34.5-114.9 82.4-10.5-7.8-23.9-12-38.3-10.6-25.7 2.5-46.2 23.1-48.8 48.8-.6 6.6-.1 13.1 1.4 19.1-41.9 1.2-75.3 35.4-75.3 77.6 0 3.7.3 7.5.8 11.2.3 1.8 1.8 3.1 3.6 3.1h340.9c1.9 0 3.8-1.4 4.3-3.3l2.4-9.2zM667 473.7c-1.6 0-3.4 0-5.1.2-1.2 0-2.2.9-2.7 2.1l-7.2 25c-3.1 10.8-2 20.7 3.3 28.1 4.8 6.7 12.9 10.6 22.7 11.1l39.3 2.4c1.2 0 2.3.6 2.8 1.5.6.9.7 2.3.5 3.3-.6 1.8-2.4 3.2-4.4 3.3l-41 2.4c-22.2 1-46 18.9-54.5 40.8l-3 7.6c-.6 1.5.5 3 2.1 3h140.8c1.6 0 3.1-1 3.6-2.7 2.4-8.7 3.7-17.9 3.7-27.3 0-55.5-45.3-100.8-101-100.8" style="fill:#fff"></path></svg></div>
         <h1 class="title">Cloudflare Service</h1>
         <p class="subtitle">基于 Cloudflare 的高性能网络服务 (${VLS} + ${TRO} + ${'Tel' + 'egram'} ${'WebPr' + 'oxy'})</p>
         
