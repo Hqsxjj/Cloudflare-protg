@@ -550,7 +550,7 @@ async function connect2S5(relayConf, targetHost, targetPort, initialData) {
         let addressLength = 0;
         if (connectHeader[3] === 0x01) addressLength = 4;
         else if (connectHeader[3] === 0x04) addressLength = 16;
-        else if (connectHeader[3] === 0x03) addressLength = (await readExact(1))[0] + 1;
+        else if (connectHeader[3] === 0x03) addressLength = (await readExact(1))[0];
         else throw new Error('S5 invalid bind address type');
         await readExact(addressLength + 2);
         
@@ -2632,9 +2632,7 @@ function getMainPageContent(url,baseUrl,authKey,config){
         
         function logout() {
             if (confirm('确定要退出登录吗?')) {
-                const currentUrl = new URL(window.location);
-                currentUrl.searchParams.delete('password');
-                window.location.href = currentUrl.toString();
+                fetch('/admin/logout', { method: 'POST' }).finally(() => { window.location.href = '/'; });
             }
         }
     <\/script>
