@@ -409,7 +409,8 @@ async function handleVlsRequest(request, customRelayIP, config) {
             await forwardataTCP(hostname, port, rawData, serverSock, respHeader, remoteConnWrapper, customRelayIP, config.relayIP);
         },
     })).catch((err) => {
-        // console.error('Readable pipe error:', err);
+        try { remoteConnWrapper.socket?.close(); } catch (e) {}
+        closeSocketQuietly(serverSock);
     });
 
     return new Response(null, { status: 101, webSocket: clientSock });
@@ -590,7 +591,11 @@ async function connect2Http(relayConf, targetHost, targetPort, initialData) {
         const maxHeaderSize = 8192;
         
         while (headerEndIndex === -1 && bytesRead < maxHeaderSize) {
-            const { done, value } = await reader.read();
+            let packet;
+            let timer;
+            try { packet = await Promise.race([reader.read(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('HTTP CONNECT handshake timed out')), 10000); })]); }
+            finally { if (timer) clearTimeout(timer); }
+            const { done, value } = packet;
             if (done) {
                 throw new Error('Connection closed before receiving HTTP response');
             }
@@ -650,10 +655,16 @@ async function connect2Http(relayConf, targetHost, targetPort, initialData) {
 async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, customRelayIP, defaultRelayIP) {
     async function connectDirect(address, port, data) {
         const remoteSock = connect({ hostname: address, port: port });
-        const writer = remoteSock.writable.getWriter();
-        await writer.write(data);
-        writer.releaseLock();
-        return remoteSock;
+        let timer;
+        try {
+            await Promise.race([remoteSock.opened, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('TCP connect timed out')), 10000); })]);
+            const writer = remoteSock.writable.getWriter();
+            try { await writer.write(data); } finally { writer.releaseLock(); }
+            return remoteSock;
+        } catch (error) {
+            try { remoteSock.close(); } catch (e) {}
+            throw error;
+        } finally { if (timer) clearTimeout(timer); }
     }
     
     let relayConf = null;
