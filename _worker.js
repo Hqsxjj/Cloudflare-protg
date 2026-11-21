@@ -7,12 +7,9 @@
 
 let connect = (await import(atob('Y2xvdWRmbGFyZTpzb2NrZXRz'))).connect;
 
-let password = '123456';  // 主页登录密码,建议修改或添加 PASSWORD环境变量
-let relayIP = 'ProxyIP.CMLiussss.net';  // pro-xyip，格式：ip、域名、ip:port、域名:port等,没填写port，默认使用443
-let mainID = 'f0ebd662-288e-42cd-b679-87c4b4f587e4'; // 节点UU-ID和TG代理的secret,建议修改或添加环境变量
-let subPath = 'link';     // 订阅token,不修改将使用通行UU-ID作为订阅路径
-let disabletro = false;  // 是否关闭tro-jan协议, 设置为true时关闭，false开启，默认开启 
-let disableech = true;  // 是否关闭ECH, 设置为true时关闭，false开启，默认关闭
+const DEFAULT_RELAY_IP='ProxyIP.CMLiussss.net', DEFAULT_UUID='f0ebd662-288e-42cd-b679-87c4b4f587e4', DEFAULT_SUB_PATH='link';
+function envBoolean(value,fallback){if(value===undefined||value===null||value==='')return fallback;if(typeof value==='boolean')return value;const v=String(value).trim().toLowerCase();if(['1','true','yes','on'].includes(v))return true;if(['0','false','no','off'].includes(v))return false;return fallback;}
+function getRequestConfig(env){const raw=env?.PROXYIP||env?.proxyip||env?.proxyIP||DEFAULT_RELAY_IP;const relayIP=String(raw).split(',').map(v=>v.trim()).filter(Boolean)[0]||DEFAULT_RELAY_IP;const mainID=env?.UUID||env?.uuid||DEFAULT_UUID;return{password:env?.PASSWORD||env?.PASSWD||env?.password||'',relayIP,mainID,subPath:env?.SUB_PATH||env?.subpath||(DEFAULT_SUB_PATH==='link'?mainID:DEFAULT_SUB_PATH),disabletro:envBoolean(env?.DISABLE_TROJAN??env?.CLOSE_TROJAN,false),disableech:envBoolean(env?.DISABLE_ECH??env?.disable_ech,true)};}
 
 // CDN 
 let cfip = [ // 格式:优选域名:端口#备注名称、优选IP:端口#备注名称、[ipv6优选]:端口#备注名称、优选域名#备注 
@@ -223,23 +220,11 @@ export default {
 	 */
     async fetch(request, env, ctx) {
         try {
+            const config=getRequestConfig(env);
+            const url=new URL(request.url);
+            if(url.pathname==='/admin/login'&&request.method==='POST')return await handleAdminLogin(request,config.password);
+            if(url.pathname==='/admin/logout')return new Response(null,{status:303,headers:{'Location':'/','Set-Cookie':'cf_admin=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'}});
 
-			if (subPath === 'link' || subPath === '') {
-				subPath = mainID;
-			}
-
-            const envRelay = env['PR' + 'OXYIP'] || env['pr' + 'oxyip'] || env['pr' + 'oxyIP'];
-            if (envRelay) {
-                const servers = envRelay.split(',').map(s => s.trim());
-                relayIP = servers[0]; 
-            }
-            password = env.PASSWORD || env.PASSWD || env.password || password;
-            subPath = env.SUB_PATH || env.subpath || subPath;
-            mainID = env['U' + 'UID'] || env['u' + 'uid'] || mainID;
-            disabletro = env['DIS' + 'ABLE_TRO' + 'JAN'] || env['CLOSE_TRO' + 'JAN'] || disabletro;
-            disableech = env['DISABLE_E' + 'CH'] || env['disable_e' + 'ch'] || disableech;
-            
-            const url = new URL(request.url);
             const pathname = url.pathname;
             
             let pathRelayIP = null;
@@ -251,13 +236,7 @@ export default {
                 }
 
                 if (pathRelayIP && !request.headers.get('Upgrade')) {
-                    relayIP = pathRelayIP;
-                    return new Response(`set relayIP to: ${relayIP}\n\n`, {
-                        headers: { 
-                            'Content-Type': 'text/plain; charset=utf-8',
-                            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-                        },
-                    });
+                    return new Response('Proxy override is request-scoped; apply it to the WebSocket path.\\n', { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
                 }
             }
 
@@ -283,22 +262,22 @@ export default {
                 }
                 
                 const customRelayIP = wsPathRelayIP || url.searchParams.get('pr'+'oxyip') || request.headers.get('pr'+'oxyip');
-                return await handleVlsRequest(request, customRelayIP);
+                return await handleVlsRequest(request, customRelayIP, config);
             } else if (request.method === 'GET') {
                 if (url.pathname === '/') {
                     // TG桌面客户端内置代理页(仅当 ?bridge= 携带有效签名时返回)
                     const gateResp = await gatePage(request, env, url);
                     if (gateResp) return gateResp;
-                    return getHomePage(request, env);
+                    return await getHomePage(request, env, config);
                 }
                 
-                if (url.pathname.toLowerCase().includes(`/${subPath.toLowerCase()}`)) {
+                if (url.pathname.toLowerCase().includes(`/${config.subPath.toLowerCase()}`)) {
                     const currentDomain = url.hostname;
                     const vlsHeader = VLS;
                     const troHeader = TRO;
                     // ECH 配置来源: 读取 ECH/ech 环境变量,未填写时自动使用默认值(cloudflare-ech.com + 阿里DoH)
                     const echVal = (env['ECH'] || env['ech'] || '').trim() || 'cloudflare-ech.com+https://dns.alidns.com/dns-query';
-                    const echParam = disableech ? '' : `&ech=${echVal}`;
+                    const echParam = config.disableech ? '' : `&ech=${echVal}`;
                     
                     // 生成 VLE-SS 节点
                     const vlsLinks = cfip.map(cdnItem => {
@@ -323,12 +302,12 @@ export default {
                         }
                         
                         const vlsNodeName = nodeName ? `${nodeName}-${vlsHeader}` : `Workers-${vlsHeader}`;
-                        return `${vlsHeader}://${mainID}@${host}:${port}?encryption=none&security=tls&sni=${currentDomain}&fp=firefox&allowInsecure=0&type=ws&host=${currentDomain}&path=%2F%3Fed%3D2560${echParam}#${vlsNodeName}`;
+                        return `${vlsHeader}://${config.mainID}@${host}:${port}?encryption=none&security=tls&sni=${currentDomain}&fp=firefox&allowInsecure=0&type=ws&host=${currentDomain}&path=%2F%3Fed%3D2560${echParam}#${vlsNodeName}`;
                     });
                     
                     // 生成 Tro-jan 节点
                     let allLinks = [...vlsLinks];
-                    if (!disabletro) {
+                    if (!config.disabletro) {
                         const troLinks = cfip.map(cdnItem => {
                             let host, port = 443, nodeName = '';
                             if (cdnItem.includes('#')) {
@@ -351,7 +330,7 @@ export default {
                             }
                             
                             const troNodeName = nodeName ? `${nodeName}-${troHeader}` : `Workers-${troHeader}`;
-                            return `${troHeader}://${mainID}@${host}:${port}?security=tls&sni=${currentDomain}&fp=firefox&allowInsecure=0&type=ws&host=${currentDomain}&path=%2F%3Fed%3D2560${echParam}#${troNodeName}`;
+                            return `${troHeader}://${config.mainID}@${host}:${port}?security=tls&sni=${currentDomain}&fp=firefox&allowInsecure=0&type=ws&host=${currentDomain}&path=%2F%3Fed%3D2560${echParam}#${troNodeName}`;
                         });
                         allLinks = [...vlsLinks, ...troLinks];
                     }
@@ -376,7 +355,7 @@ export default {
  * 
  * @param {import("@cloudflare/workers-types").Request} request
  */
-async function handleVlsRequest(request, customRelayIP) {
+async function handleVlsRequest(request, customRelayIP, config) {
     const wssPair = new WebSocketPair();
     const clientSock = wssPair[0];
     const serverSock = wssPair[1];
@@ -398,8 +377,8 @@ async function handleVlsRequest(request, customRelayIP) {
                 return;
             }
             
-            if (!disabletro) {
-                const troResult = await parsetroHeader(chunk, mainID);
+            if (!config.disabletro) {
+                const troResult = await parsetroHeader(chunk, config.mainID);
                 if (!troResult.hasError) {
                     isTro = true;
                     const { addressType, port, hostname, rawClientData } = troResult;
@@ -408,12 +387,12 @@ async function handleVlsRequest(request, customRelayIP) {
                         throw new Error('Speedtest site is blocked');
                     }
                     
-                    await forwardataTCP(hostname, port, rawClientData, serverSock, null, remoteConnWrapper, customRelayIP);
+                    await forwardataTCP(hostname, port, rawClientData, serverSock, null, remoteConnWrapper, customRelayIP, config.relayIP);
                     return;
                 }
             }
             
-            const { hasError, message, addressType, port, hostname, rawIndex, version, isUDP } = parseVLsPacketHeader(chunk, mainID);
+            const { hasError, message, addressType, port, hostname, rawIndex, version, isUDP } = parseVLsPacketHeader(chunk, config.mainID);
             if (hasError) throw new Error(message);
 
             if (isSpeedTestSite(hostname)) {
@@ -427,10 +406,11 @@ async function handleVlsRequest(request, customRelayIP) {
             const respHeader = new Uint8Array([version[0], 0]);
             const rawData = chunk.slice(rawIndex);
             if (isDnsQuery) return forwardataudp(rawData, serverSock, respHeader);
-            await forwardataTCP(hostname, port, rawData, serverSock, respHeader, remoteConnWrapper, customRelayIP);
+            await forwardataTCP(hostname, port, rawData, serverSock, respHeader, remoteConnWrapper, customRelayIP, config.relayIP);
         },
     })).catch((err) => {
-        // console.error('Readable pipe error:', err);
+        try { remoteConnWrapper.socket?.close(); } catch (e) {}
+        closeSocketQuietly(serverSock);
     });
 
     return new Response(null, { status: 101, webSocket: clientSock });
@@ -511,6 +491,21 @@ async function connect2S5(relayConf, targetHost, targetPort, initialData) {
     const socket = connect({ hostname: host, port: port });
     const writer = socket.writable.getWriter();
     const reader = socket.readable.getReader();
+    let readBuffer = new Uint8Array(0);
+    async function readExact(length) {
+        while (readBuffer.length < length) {
+            let packet;
+            let timer;
+            try {
+                packet = await Promise.race([reader.read(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('S5 handshake timed out')), 10000); })]);
+            } finally { if (timer) clearTimeout(timer); }
+            const { done, value } = packet;
+            if (done) throw new Error('S5 connection closed during handshake');
+            const merged = new Uint8Array(readBuffer.length + value.length);
+            merged.set(readBuffer); merged.set(value, readBuffer.length); readBuffer = merged;
+        }
+        const result = readBuffer.slice(0, length); readBuffer = readBuffer.slice(length); return result;
+    }
     
     try {
         const authMethods = username && password ? 
@@ -518,12 +513,8 @@ async function connect2S5(relayConf, targetHost, targetPort, initialData) {
             new Uint8Array([0x05, 0x01, 0x00]); 
         
         await writer.write(authMethods);
-        const methodResponse = await reader.read();
-        if (methodResponse.done || methodResponse.value.byteLength < 2) {
-            throw new Error('S5 method selection failed');
-        }
-        
-        const selectedMethod = new Uint8Array(methodResponse.value)[1];
+        const methodResponse = await readExact(2);
+        const selectedMethod = methodResponse[1];
         if (selectedMethod === 0x02) {
             if (!username || !password) {
                 throw new Error('S5 requires authentication');
@@ -537,8 +528,8 @@ async function connect2S5(relayConf, targetHost, targetPort, initialData) {
             authPacket[2 + userBytes.length] = passBytes.length;
             authPacket.set(passBytes, 3 + userBytes.length);
             await writer.write(authPacket);
-            const authResponse = await reader.read();
-            if (authResponse.done || new Uint8Array(authResponse.value)[1] !== 0x00) {
+            const authResponse = await readExact(2);
+            if (authResponse[1] !== 0x00) {
                 throw new Error('S5 authentication failed');
             }
         } else if (selectedMethod !== 0x00) {
@@ -555,18 +546,23 @@ async function connect2S5(relayConf, targetHost, targetPort, initialData) {
         connectPacket.set(hostBytes, 5);
         new DataView(connectPacket.buffer).setUint16(5 + hostBytes.length, targetPort, false);
         await writer.write(connectPacket);
-        const connectResponse = await reader.read();
-        if (connectResponse.done || new Uint8Array(connectResponse.value)[1] !== 0x00) {
-            throw new Error('S5 connection failed');
-        }
+        const connectHeader = await readExact(4);
+        if (connectHeader[0] !== 0x05 || connectHeader[1] !== 0x00) throw new Error('S5 connection failed');
+        let addressLength = 0;
+        if (connectHeader[3] === 0x01) addressLength = 4;
+        else if (connectHeader[3] === 0x04) addressLength = 16;
+        else if (connectHeader[3] === 0x03) addressLength = (await readExact(1))[0];
+        else throw new Error('S5 invalid bind address type');
+        await readExact(addressLength + 2);
         
         await writer.write(initialData);
         writer.releaseLock();
         reader.releaseLock();
         return socket;
     } catch (error) {
-        writer.releaseLock();
-        reader.releaseLock();
+        try { writer.releaseLock(); } catch (e) {}
+        try { reader.releaseLock(); } catch (e) {}
+        try { socket.close(); } catch (e) {}
         throw error;
     }
 }
@@ -595,7 +591,11 @@ async function connect2Http(relayConf, targetHost, targetPort, initialData) {
         const maxHeaderSize = 8192;
         
         while (headerEndIndex === -1 && bytesRead < maxHeaderSize) {
-            const { done, value } = await reader.read();
+            let packet;
+            let timer;
+            try { packet = await Promise.race([reader.read(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('HTTP CONNECT handshake timed out')), 10000); })]); }
+            finally { if (timer) clearTimeout(timer); }
+            const { done, value } = packet;
             if (done) {
                 throw new Error('Connection closed before receiving HTTP response');
             }
@@ -652,13 +652,19 @@ async function connect2Http(relayConf, targetHost, targetPort, initialData) {
     }
 }
 
-async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, customRelayIP) {
+async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, customRelayIP, defaultRelayIP) {
     async function connectDirect(address, port, data) {
         const remoteSock = connect({ hostname: address, port: port });
-        const writer = remoteSock.writable.getWriter();
-        await writer.write(data);
-        writer.releaseLock();
-        return remoteSock;
+        let timer;
+        try {
+            await Promise.race([remoteSock.opened, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('TCP connect timed out')), 10000); })]);
+            const writer = remoteSock.writable.getWriter();
+            try { await writer.write(data); } finally { writer.releaseLock(); }
+            return remoteSock;
+        } catch (error) {
+            try { remoteSock.close(); } catch (e) {}
+            throw error;
+        } finally { if (timer) clearTimeout(timer); }
     }
     
     let relayConf = null;
@@ -668,10 +674,10 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
         if (relayConf && (relayConf.type === S5 || relayConf.type === 'http' || relayConf.type === 'https')) {
             useRelay = true;
         } else if (!relayConf) {
-            relayConf = parsePryAddress(relayIP) || { type: 'direct', host: relayIP, port: 443 };
+            relayConf = parsePryAddress(defaultRelayIP) || { type: 'direct', host: defaultRelayIP, port: 443 };
         }
     } else {
-        relayConf = parsePryAddress(relayIP) || { type: 'direct', host: relayIP, port: 443 };
+        relayConf = parsePryAddress(defaultRelayIP) || { type: 'direct', host: defaultRelayIP, port: 443 };
         if (relayConf.type === S5 || relayConf.type === 'http' || relayConf.type === 'https') {
             useRelay = true;
         }
@@ -1084,7 +1090,7 @@ async function deriveSeed(rawKey) {
 let CFG_CACHE = null;
 async function mkCfg(env) {
   if (CFG_CACHE) return CFG_CACHE;
-  const skey = normHex(env?.SECRET || mainID);
+  const skey = normHex(env?.SECRET || env?.UUID || env?.uuid || DEFAULT_UUID);
   if (!skey) throw Error();
   const key = keyFrom(skey); // 校验 SECRET 格式（32 hex 或 dd/ee/ef 前缀）
   const seed = await deriveSeed(skey);
@@ -1762,22 +1768,15 @@ async function gatePage(request, env, url) {
  * 
  * @param {import("@cloudflare/workers-types").Request} request
  */
-function getHomePage(request, env) {
-	const url = request.headers.get('Host');
-	const baseUrl = `https://${url}`;
-	const urlObj = new URL(request.url);
-	const providedPassword = urlObj.searchParams.get('password');
-	const authKey = normHex(env?.SECRET || mainID);
-	if (providedPassword) {
-		if (providedPassword === password) {
-			return getMainPageContent(url, baseUrl, authKey);
-		} else {
-			return getLoginPage(url, baseUrl, true);
-		}
-	}
-	return getLoginPage(url, baseUrl, false);
-}
+async function getHomePage(request,env,config){const host=request.headers.get('Host'),baseUrl=`https://${host}`,authKey=normHex(env?.SECRET||config.mainID);if(!config.password)return new Response('Admin login disabled: configure PASSWORD environment variable.',{status:503,headers:{'Cache-Control':'no-store'}});if(await isAdminSessionValid(request,config.password))return getMainPageContent(host,baseUrl,authKey,config);return getLoginPage(host,baseUrl,false);}
 
+
+
+const ADMIN_SESSION_TTL=8*60*60;
+function adminB64Url(bytes){let raw='';for(const b of bytes)raw+=String.fromCharCode(b);return btoa(raw).replaceAll('=','').replaceAll('+','-').replaceAll('/','_');}
+async function adminSignature(payload,password){const key=await CRYPTO.subtle.importKey('raw',new TextEncoder().encode(password),{name:'HMAC',hash:'SHA-256'},false,['sign']);return adminB64Url(new Uint8Array(await CRYPTO.subtle.sign('HMAC',key,new TextEncoder().encode(payload))));}
+async function handleAdminLogin(request,password){if(!password)return new Response('Configure PASSWORD first.',{status:503});const form=await request.formData();if(String(form.get('password')||'')!==password)return new Response('Invalid password',{status:401,headers:{'Cache-Control':'no-store'}});const exp=String(Math.floor(Date.now()/1000)+ADMIN_SESSION_TTL),sig=await adminSignature(exp,password);return new Response(null,{status:303,headers:{'Location':'/','Set-Cookie':`cf_admin=${exp}.${sig}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${ADMIN_SESSION_TTL}`,'Cache-Control':'no-store'}});}
+async function isAdminSessionValid(request,password){const m=(request.headers.get('Cookie')||'').match(/(?:^|;\s*)cf_admin=(\d+)\.([A-Za-z0-9_-]+)/);if(!m)return false;const now=Math.floor(Date.now()/1000),exp=Number(m[1]);if(!Number.isSafeInteger(exp)||exp<=now||exp>now+ADMIN_SESSION_TTL+60)return false;try{const want=await adminSignature(m[1],password);if(want.length!==m[2].length)return false;let diff=0;for(let i=0;i<want.length;i++)diff|=want.charCodeAt(i)^m[2].charCodeAt(i);return diff===0;}catch{return false;}}
 
 // 获取登录页面
 function getLoginPage(url, baseUrl, showError = false) {
@@ -1998,9 +1997,7 @@ function getLoginPage(url, baseUrl, showError = false) {
         function handleLogin(event) {
             event.preventDefault();
             const password = document.getElementById('password').value;
-            const currentUrl = new URL(window.location);
-            currentUrl.searchParams.set('password', password);
-            window.location.href = currentUrl.toString();
+            fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({password})}).then(r=>{if(r.ok||r.redirected)location.href='/';else alert('登录失败，请检查密码配置');});
         }
     <\/script>
 </body>
@@ -2022,10 +2019,10 @@ function getLoginPage(url, baseUrl, showError = false) {
  * @param {string} authKey TG 代理密钥
  * @returns {Response}
  */
-function getMainPageContent(url, baseUrl, authKey) {
-	const subA = `${baseUrl}/${subPath}`;
-	const subB = `https://sublink.eooce.com/${'c' + 'lash'}?config=${baseUrl}/${subPath}`;
-	const subC = `https://sublink.eooce.com/${'sing' + 'box'}?config=${baseUrl}/${subPath}`;
+function getMainPageContent(url,baseUrl,authKey,config){
+	const subA=`${baseUrl}/${config.subPath}`;
+	const subB=`https://sublink.eooce.com/${'c'+'lash'}?config=${baseUrl}/${config.subPath}`;
+	const subC=`https://sublink.eooce.com/${'sing'+'box'}?config=${baseUrl}/${config.subPath}`;
 	const shareLink = 'https://t.' + 'me/webpr' + 'oxy?server=' + url + '&secret=' + authKey;
 
 	const html = `<!DOCTYPE html>
@@ -2139,7 +2136,7 @@ function getMainPageContent(url, baseUrl, authKey) {
             display: block;
             margin: 0 auto;
             border-radius: 50%;
-            box-shadow: 0 10px 24px rgba(234, 88, 12, .3);
+            box-shadow: 0 10px 24px rgba(201, 170, 112, .18);
         }
         
         .title {
@@ -2365,6 +2362,71 @@ function getMainPageContent(url, baseUrl, authKey) {
             box-shadow: 0 6px 14px rgba(234, 88, 12, .35);
         }
         
+        /* Premium midnight theme */
+        body {
+            background: radial-gradient(ellipse at 18% 8%, rgba(43, 69, 108, .38), transparent 42%),
+                        radial-gradient(ellipse at 86% 88%, rgba(132, 105, 61, .18), transparent 38%),
+                        #080f1c;
+            color: #e8edf5;
+        }
+        .orb-1 { background: rgba(73, 105, 151, .24); }
+        .orb-2 { background: rgba(190, 157, 101, .16); }
+        .orb-3 { background: rgba(82, 111, 151, .16); }
+        .container {
+            background: rgba(17, 28, 46, .94);
+            border: 1px solid rgba(205, 218, 238, .12);
+            box-shadow: 0 28px 80px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(255, 255, 255, .035);
+        }
+        .logout-btn {
+            background: rgba(17, 28, 46, .72);
+            color: #dce5f1;
+            border-color: rgba(205, 218, 238, .18);
+        }
+        .logout-btn:hover { background: rgba(35, 50, 73, .92); }
+        .logo svg { box-shadow: 0 8px 28px rgba(201, 170, 112, .18); }
+        .title {
+            background: linear-gradient(105deg, #f0dfbd 0%, #c9aa70 48%, #a9bdd8 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+        }
+        .subtitle { color: #93a3b9; }
+        .section-card, .info-card {
+            background: rgba(26, 40, 62, .78);
+            border-color: rgba(184, 201, 225, .12);
+        }
+        .section-title { color: #e7edf6; }
+        .section-title i { color: #c9aa70; }
+        .section-hint { color: #a8b6c9; background: rgba(125, 146, 176, .13); }
+        .link-item:hover {
+            background: rgba(112, 137, 171, .12);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+        }
+        .link-icon { box-shadow: 0 5px 16px rgba(0, 0, 0, .22); }
+        .icon-k1 { background: linear-gradient(145deg, #c9aa70, #8c744c); }
+        .icon-k2 { background: linear-gradient(145deg, #6686ae, #385575); }
+        .icon-k3 { background: linear-gradient(145deg, #8b91b4, #555d80); }
+        .icon-tg { background: linear-gradient(145deg, #6e9db5, #426b83); }
+        .link-label { color: #e8edf5; }
+        .link-value { color: #9cacc1; }
+        .copy-icon { color: #71839d; }
+        .link-item:hover .copy-icon { color: #d6bd91; }
+        .info-item { border-bottom-color: rgba(184, 201, 225, .12); }
+        .label { color: #aebbd0; }
+        .value {
+            color: #dce5f1;
+            background: rgba(117, 139, 169, .14);
+        }
+        .status { background: #73c7a0; }
+        .footer { border-top-color: rgba(184, 201, 225, .12); }
+        .footer-link {
+            color: #aebbd0;
+            background: rgba(117, 139, 169, .12);
+        }
+        .footer-link:hover {
+            background: linear-gradient(105deg, #b99a65, #8f7956);
+            color: #101827;
+            box-shadow: 0 7px 18px rgba(0, 0, 0, .22);
+        }
         .github-icon {
             width: 14px;
             height: 14px;
@@ -2494,7 +2556,7 @@ function getMainPageContent(url, baseUrl, authKey) {
     </button>
     
     <div class="container">
-        <div class="logo"><svg width="100%" height="100%" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><circle cx="512" cy="512" r="512" style="fill:#f38020"></circle><path d="M608.2 592.4c3.1-10.8 1.9-20.7-3.3-28.1-4.8-6.7-12.9-10.6-22.6-11.1l-184.7-2.4c-1.1 0-2.2-.6-2.8-1.5-.6-.9-.7-2.1-.4-3.3.6-1.8 2.4-3.2 4.3-3.3l186.4-2.4c22.1-1 46.1-18.9 54.5-40.8l10.6-27.8c.5-1.2.6-2.4.3-3.6-12-54.3-60.5-94.8-118.4-94.8-53.4 0-98.7 34.5-114.9 82.4-10.5-7.8-23.9-12-38.3-10.6-25.7 2.5-46.2 23.1-48.8 48.8-.6 6.6-.1 13.1 1.4 19.1-41.9 1.2-75.3 35.4-75.3 77.6 0 3.7.3 7.5.8 11.2.3 1.8 1.8 3.1 3.6 3.1h340.9c1.9 0 3.8-1.4 4.3-3.3l2.4-9.2zM667 473.7c-1.6 0-3.4 0-5.1.2-1.2 0-2.2.9-2.7 2.1l-7.2 25c-3.1 10.8-2 20.7 3.3 28.1 4.8 6.7 12.9 10.6 22.7 11.1l39.3 2.4c1.2 0 2.3.6 2.8 1.5.6.9.7 2.3.5 3.3-.6 1.8-2.4 3.2-4.4 3.3l-41 2.4c-22.2 1-46 18.9-54.5 40.8l-3 7.6c-.6 1.5.5 3 2.1 3h140.8c1.6 0 3.1-1 3.6-2.7 2.4-8.7 3.7-17.9 3.7-27.3 0-55.5-45.3-100.8-101-100.8" style="fill:#fff"></path></svg></div>
+        <div class="logo"><svg width="100%" height="100%" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><circle cx="512" cy="512" r="512" style="fill:#c9aa70"></circle><path d="M608.2 592.4c3.1-10.8 1.9-20.7-3.3-28.1-4.8-6.7-12.9-10.6-22.6-11.1l-184.7-2.4c-1.1 0-2.2-.6-2.8-1.5-.6-.9-.7-2.1-.4-3.3.6-1.8 2.4-3.2 4.3-3.3l186.4-2.4c22.1-1 46.1-18.9 54.5-40.8l10.6-27.8c.5-1.2.6-2.4.3-3.6-12-54.3-60.5-94.8-118.4-94.8-53.4 0-98.7 34.5-114.9 82.4-10.5-7.8-23.9-12-38.3-10.6-25.7 2.5-46.2 23.1-48.8 48.8-.6 6.6-.1 13.1 1.4 19.1-41.9 1.2-75.3 35.4-75.3 77.6 0 3.7.3 7.5.8 11.2.3 1.8 1.8 3.1 3.6 3.1h340.9c1.9 0 3.8-1.4 4.3-3.3l2.4-9.2zM667 473.7c-1.6 0-3.4 0-5.1.2-1.2 0-2.2.9-2.7 2.1l-7.2 25c-3.1 10.8-2 20.7 3.3 28.1 4.8 6.7 12.9 10.6 22.7 11.1l39.3 2.4c1.2 0 2.3.6 2.8 1.5.6.9.7 2.3.5 3.3-.6 1.8-2.4 3.2-4.4 3.3l-41 2.4c-22.2 1-46 18.9-54.5 40.8l-3 7.6c-.6 1.5.5 3 2.1 3h140.8c1.6 0 3.1-1 3.6-2.7 2.4-8.7 3.7-17.9 3.7-27.3 0-55.5-45.3-100.8-101-100.8" style="fill:#fff"></path></svg></div>
         <h1 class="title">Cloudflare Service</h1>
         <p class="subtitle">基于 Cloudflare 的高性能网络服务 (${VLS} + ${TRO} + ${'Tel' + 'egram'} ${'WebPr' + 'oxy'})</p>
         
@@ -2647,9 +2709,7 @@ function getMainPageContent(url, baseUrl, authKey) {
         
         function logout() {
             if (confirm('确定要退出登录吗?')) {
-                const currentUrl = new URL(window.location);
-                currentUrl.searchParams.delete('password');
-                window.location.href = currentUrl.toString();
+                fetch('/admin/logout', { method: 'POST' }).finally(() => { window.location.href = '/'; });
             }
         }
     <\/script>
